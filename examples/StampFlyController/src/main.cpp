@@ -42,6 +42,35 @@
 #include "./images/move_start_5.h"
 
 #include "app_lvgl.h"
+#include <WebServer.h>
+
+const char* apSSID     = "StampFlyCtrl";
+const char* apPassword = "";  // open network
+
+WebServer webServer(80);
+
+void handleRoot() {
+    String s = "<html><body>";
+    s += "<h1>StampFly Controller</h1>";
+    s += "<p><a href=\"/values\">/values</a></p>";
+    s += "<p><a href=\"/beep\">/beep</a></p>";
+    s += "</body></html>";
+    webServer.send(200, "text/html", s);
+}
+
+void handleValues() {
+    joy_update();
+    char buf[128];
+    snprintf(buf, sizeof(buf),
+             "{\"throttle\":%u,\"aileron\":%u,\"elevator\":%u,\"rudder\":%u}",
+             getThrottle(), getAileron(), getElevator(), getRudder());
+    webServer.send(200, "application/json", buf);
+}
+
+void handleBeep() {
+    beep();
+    webServer.send(200, "text/plain", "ok");
+}
 
 M5GFX display;
 
@@ -195,7 +224,7 @@ void load_data(void) {
 
 void rc_init(uint8_t ch, uint8_t *addr) {
     // ESP-NOW初期化
-    WiFi.mode(WIFI_STA);
+    WiFi.mode(WIFI_AP_STA);
     WiFi.disconnect();
     if (esp_now_init() == ESP_OK) {
         esp_now_unregister_recv_cb();
@@ -452,6 +481,14 @@ void setup() {
     timerAlarmWrite(timer, 10000, true);
     timerAlarmEnable(timer);
     delay(100);
+
+    WiFi.softAP(apSSID, apPassword, Channel);
+    IPAddress ip = WiFi.softAPIP();
+    USBSerial.printf("AP: %s IP: %s\n", apSSID, ip.toString().c_str());
+    webServer.on("/", handleRoot);
+    webServer.on("/values", handleValues);
+    webServer.on("/beep", handleBeep);
+    webServer.begin();
 }
 
 uint8_t check_control_mode_change(void) {
@@ -491,6 +528,7 @@ uint8_t check_alt_mode_change(void) {
 }
 
 void loop() {
+    webServer.handleClient();
     uint16_t _throttle;  // = getThrottle();
     uint16_t _phi;       // = getAileron();
     uint16_t _theta;     // = getElevator();
